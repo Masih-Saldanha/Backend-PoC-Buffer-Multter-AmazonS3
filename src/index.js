@@ -1,6 +1,8 @@
-import express, { json, urlencoded } from "express";
+import express, { json } from "express";
 import cors from "cors";
 import multer from "multer";
+import aws from "aws-sdk";
+import multerS3 from "multer-s3";
 import dotenv from "dotenv";
 
 import db from "./db.js"
@@ -11,28 +13,48 @@ const app = express();
 app.use(json());
 app.use(cors());
 
-// Configuração de armazenamento
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/')
-    },
-    filename: function (req, file, cb) {
-        // Extração da extensão do arquivo original:
-        const extensaoArquivo = file.originalname.split('.')[1];
-        const nomeOriginalDoArquivo = file.originalname.split('.')[0];
-
-        // Indica o novo nome do arquivo:
-        cb(null, `${nomeOriginalDoArquivo}-${Date.now()}.${extensaoArquivo}`)
-    }
-});
-
-const upload = multer({ storage });
-
 // FORMA SEM CONFIGURAÇÕES DE ARMAZENAMENTO:
 // const upload = multer({ dest: 'uploads/' });
 
-// REQUISIÇÃO COM APENAS UM ARQUIVO E JSON:
+// CONFIGURAÇÃO DE ARMAZENAMENTO NA API
+// const storage = multer.diskStorage({
+//     destination: function (req, file, cb) {
+//         cb(null, 'uploads/')
+//     },
+//     filename: function (req, file, cb) {
+//         // Extração da extensão do arquivo original:
+//         const extensaoArquivo = file.originalname.split('.')[1];
+//         const nomeOriginalDoArquivo = file.originalname.split('.')[0];
 
+//         // Indica o novo nome do arquivo:
+//         cb(null, `${nomeOriginalDoArquivo}-${Date.now()}.${extensaoArquivo}`)
+//     }
+// });
+
+// const upload = multer({ storage });
+
+// CONFIGURAÇÃO DE ARMAZENAMENTO NA AWS
+const s3 = new aws.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+})
+let upload = multer({
+    storage: multerS3({
+        s3: s3,
+        bucket: process.env.AWS_BUCKET_NAME,
+        metadata: function (req, file, cb) {
+            cb(null, { fieldName: file.fieldname });
+        },
+        key: function (req, file, cb) {
+            const extensaoArquivo = file.originalname.split('.')[1];
+            const nomeOriginalDoArquivo = file.originalname.split('.')[0];
+
+            cb(null, `${nomeOriginalDoArquivo}-${Date.now()}.${extensaoArquivo}`)
+        }
+    })
+})
+
+// REQUISIÇÃO COM APENAS UM ARQUIVO E JSON:
 app.post("/usuarios", upload.single("foto"), async (req, res) => {
     const { nome, idade } = req.body;
     try {
@@ -47,7 +69,6 @@ app.post("/usuarios", upload.single("foto"), async (req, res) => {
 })
 
 // REQUISIÇÃO COM VÁRIOS ARQUIVOS E JSON:
-
 app.post("/usuarios/maisfotos", upload.array("foto"), async (req, res) => {
     const { nome, idade } = req.body;
     try {
@@ -61,6 +82,7 @@ app.post("/usuarios/maisfotos", upload.array("foto"), async (req, res) => {
     }
 })
 
+// REQUISIÇÃO DE ENVIO LISTA DE USUÁRIOS:
 app.get("/usuarios", async (req, res) => {
     try {
         const produtos = await db.collection("usuarios").find().toArray();
